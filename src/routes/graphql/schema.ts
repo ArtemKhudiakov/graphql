@@ -9,7 +9,9 @@ import {
   GraphQLInt,
   GraphQLBoolean,
   GraphQLSchema,
+  GraphQLResolveInfo,
 } from 'graphql';
+import { parseResolveInfo } from 'graphql-parse-resolve-info';
 import { UUIDType } from './types/uuid.js';
 import { MemberTypeId } from '../member-types/schemas.js';
 
@@ -161,9 +163,63 @@ export const createSchema = (prisma: any) => {
       },
       users: {
         type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(User))),
-        resolve: async (_: unknown, __: unknown, context: any) => {
-          const users = await prisma.user.findMany();
-          context.loadedUsers = new Map(users.map((user) => [user.id, user]));
+        resolve: async (_: unknown, __: unknown, context: any, info: GraphQLResolveInfo) => {
+          const parsedInfo = parseResolveInfo(info) as any;
+          const userFields: Record<string, any> | undefined = parsedInfo?.fieldsByTypeName?.User;
+
+          const needsUserSubscribedTo = Boolean(userFields?.userSubscribedTo);
+          const needsSubscribedToUser = Boolean(userFields?.subscribedToUser);
+
+          const include: any = {};
+          if (needsUserSubscribedTo) {
+            include.userSubscribedTo = true;
+          }
+          if (needsSubscribedToUser) {
+            include.subscribedToUser = true;
+          }
+
+          const queryOptions: any = {};
+          if (Object.keys(include).length > 0) {
+            queryOptions.include = include;
+          }
+
+          const users = await prisma.user.findMany(queryOptions);
+
+          const userMap = new Map(users.map((user: any) => [user.id, user]));
+          context.loadedUsers = userMap;
+
+          const relatedUserIds = new Set<string>();
+          for (const user of users) {
+            context.loaders.userLoader.prime(user.id, user);
+
+            if (user.userSubscribedTo) {
+              for (const sub of user.userSubscribedTo) {
+                relatedUserIds.add(sub.authorId);
+              }
+            }
+
+            if (user.subscribedToUser) {
+              for (const sub of user.subscribedToUser) {
+                relatedUserIds.add(sub.subscriberId);
+              }
+            }
+          }
+
+          if (relatedUserIds.size > 0) {
+            const idsArray = Array.from(relatedUserIds).filter(
+              (id) => !context.loadedUsers.has(id),
+            );
+            if (idsArray.length > 0) {
+              const relatedUsers = await prisma.user.findMany({
+                where: { id: { in: idsArray } },
+              });
+              for (const relatedUser of relatedUsers) {
+                context.loaders.userLoader.prime(relatedUser.id, relatedUser);
+                context.loadedUsers.set(relatedUser.id, relatedUser);
+              }
+            }
+          }
+
           return users;
         },
       },
