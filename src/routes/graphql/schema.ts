@@ -101,10 +101,8 @@ export const createSchema = (prisma: any) => {
       yearOfBirth: { type: new GraphQLNonNull(GraphQLInt) },
       memberType: {
         type: new GraphQLNonNull(MemberType),
-        resolve: async (parent: { memberTypeId: string }) => {
-          return prisma.memberType.findUnique({
-            where: { id: parent.memberTypeId },
-          });
+        resolve: async (parent: { memberTypeId: string }, _: unknown, context: any) => {
+          return context.loaders.memberTypeLoader.load(parent.memberTypeId);
         },
       },
     }),
@@ -118,50 +116,26 @@ export const createSchema = (prisma: any) => {
       balance: { type: new GraphQLNonNull(GraphQLFloat) },
       profile: {
         type: ProfileWithResolvers,
-        resolve: async (parent: { id: string }) => {
-          return prisma.profile.findUnique({
-            where: { userId: parent.id },
-          });
+        resolve: async (parent: { id: string }, _: unknown, context: any) => {
+          return context.loaders.profileByUserIdLoader.load(parent.id);
         },
       },
       posts: {
         type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(Post))),
-        resolve: async (parent: { id: string }) => {
-          return prisma.post.findMany({
-            where: { authorId: parent.id },
-          });
+        resolve: async (parent: { id: string }, _: unknown, context: any) => {
+          return context.loaders.postsByAuthorIdLoader.load(parent.id);
         },
       },
       userSubscribedTo: {
         type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(User))),
-        resolve: async (parent: { id: string }) => {
-          const subscriptions = await prisma.subscribersOnAuthors.findMany({
-            where: { subscriberId: parent.id },
-            select: { authorId: true },
-          });
-          const authorIds = subscriptions.map((s) => s.authorId);
-          if (authorIds.length === 0) {
-            return [];
-          }
-          return prisma.user.findMany({
-            where: { id: { in: authorIds } },
-          });
+        resolve: async (parent: { id: string }, _: unknown, context: any) => {
+          return context.loaders.userSubscribedToLoader.load(parent.id);
         },
       },
       subscribedToUser: {
         type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(User))),
-        resolve: async (parent: { id: string }) => {
-          const subscriptions = await prisma.subscribersOnAuthors.findMany({
-            where: { authorId: parent.id },
-            select: { subscriberId: true },
-          });
-          const subscriberIds = subscriptions.map((s) => s.subscriberId);
-          if (subscriberIds.length === 0) {
-            return [];
-          }
-          return prisma.user.findMany({
-            where: { id: { in: subscriberIds } },
-          });
+        resolve: async (parent: { id: string }, _: unknown, context: any) => {
+          return context.loaders.subscribedToUserLoader.load(parent.id);
         },
       },
     }),
@@ -181,16 +155,16 @@ export const createSchema = (prisma: any) => {
         args: {
           id: { type: new GraphQLNonNull(MemberTypeIdEnum) },
         },
-        resolve: async (_: unknown, args: { id: string }) => {
-          return prisma.memberType.findUnique({
-            where: { id: args.id },
-          });
+        resolve: async (_: unknown, args: { id: string }, context: any) => {
+          return context.loaders.memberTypeLoader.load(args.id);
         },
       },
       users: {
         type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(User))),
-        resolve: async () => {
-          return prisma.user.findMany();
+        resolve: async (_: unknown, __: unknown, context: any) => {
+          const users = await prisma.user.findMany();
+          context.loadedUsers = new Map(users.map((user) => [user.id, user]));
+          return users;
         },
       },
       user: {
@@ -198,10 +172,8 @@ export const createSchema = (prisma: any) => {
         args: {
           id: { type: new GraphQLNonNull(UUIDType) },
         },
-        resolve: async (_: unknown, args: { id: string }) => {
-          return prisma.user.findUnique({
-            where: { id: args.id },
-          });
+        resolve: async (_: unknown, args: { id: string }, context: any) => {
+          return context.loaders.userLoader.load(args.id);
         },
       },
       posts: {
@@ -215,10 +187,8 @@ export const createSchema = (prisma: any) => {
         args: {
           id: { type: new GraphQLNonNull(UUIDType) },
         },
-        resolve: async (_: unknown, args: { id: string }) => {
-          return prisma.post.findUnique({
-            where: { id: args.id },
-          });
+        resolve: async (_: unknown, args: { id: string }, context: any) => {
+          return context.loaders.postLoader.load(args.id);
         },
       },
       profiles: {
@@ -232,10 +202,8 @@ export const createSchema = (prisma: any) => {
         args: {
           id: { type: new GraphQLNonNull(UUIDType) },
         },
-        resolve: async (_: unknown, args: { id: string }) => {
-          return prisma.profile.findUnique({
-            where: { id: args.id },
-          });
+        resolve: async (_: unknown, args: { id: string }, context: any) => {
+          return context.loaders.profileLoader.load(args.id);
         },
       },
     }),
